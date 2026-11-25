@@ -12,6 +12,13 @@ const O = process.env.MAKEFUN_OUTPUT_DIR ?? '/output';
 // Pops / pushes per opcode byte (0..83); unknown opcodes read 0.
 const PP = '000112230000000022222221222122202220000000000000011000000000000012000000000000001101';
 const QQ = '011022330000000011111111111111101110000000000000000000000000000010000000000000000010';
+// Decode tables built once at load: the hot loop used to re-run
+// charCodeAt on these strings plus a ternary for the immediate length
+// on every step. Typed-array loads are cheaper and branch-free, and
+// entries past 83 stay 0, so unknown opcodes behave exactly as before.
+const IMM = new Uint8Array(256), POPS = new Uint8Array(256), PUSH = new Uint8Array(256);
+for (let i = 0; i < 84; i++) { POPS[i] = PP.charCodeAt(i) - 48; PUSH[i] = QQ.charCodeAt(i) - 48; }
+IMM[1] = 1; IMM[2] = 4; IMM[48] = IMM[49] = IMM[50] = IMM[51] = 2;
 
 function run(p, inp) {
   const D = new Int32Array(256), C = new Int32Array(64), M = new Int32Array(256);
@@ -23,11 +30,11 @@ function run(p, inp) {
     if (st === 1000000) return done(10);
     if (pc < 0 || pc >= n) return done(9);
     const op = p[pc];
-    const im = op === 1 ? 1 : op === 2 ? 4 : op >= 48 && op <= 51 ? 2 : 0;
+    const im = IMM[op];
     if (pc + im >= n) return done(9);
     st++;
     const nx = pc + 1 + im;
-    const po = PP.charCodeAt(op) - 48 || 0, pu = QQ.charCodeAt(op) - 48 || 0;
+    const po = POPS[op], pu = PUSH[op];
     if (sp < po) return done(2);
     if (sp - po + pu > 256) return done(3);
     pc = nx;
